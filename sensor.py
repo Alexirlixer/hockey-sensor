@@ -4,18 +4,10 @@ import machine
 import struct
 from machine import Pin, ADC
 import time
+import math
 
 meas_pin = machine.Pin(29, machine.Pin.IN)
 vsys = machine.ADC(3)
-noise = {
-    'gx': (-2.502723322906186, 2.5436267639633625),
-    'gy': (-0.49575641770802303, 0.5065996729742798),
-    'gz': (-0.33516017607772947, 0.3083873120191138),
-    'ax': (-0.09868671432857441, -0.02056226918855668),
-    'ay': (0.05140231812338187, 0.12810310529571275),
-    'az': (-0.0677758433171089, 0.05252005407252612)
-}
-
 
 async def battery_level(on_battery):
     while True:
@@ -31,15 +23,10 @@ def _measure_pack(imu):
     g = imu.gyro()
     a = imu.lin_acc()
 
-    gx, gy, gz = g
     ax, ay, az = a
+    acc = math.sqrt(ax**2 + ay**2 + az**2)
 
-    # if (gx < noise['gx'][0] or gx > noise['gx'][1] or
-    #     gy < noise['gy'][0] or gy > noise['gy'][1] or
-    #     gz < noise['gz'][0] or gz > noise['gz'][1] or
-    if (ax < noise['ax'][0] or ax > noise['ax'][1] or
-        ay < noise['ay'][0] or ay > noise['ay'][1] or
-        az < noise['az'][0] or az > noise['az'][1]):
+    if acc > 0.20:
         # not a noise measurement
         m = (time.ticks_us(),) + g + a
         return struct.pack("<Qffffff", *m)

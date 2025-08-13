@@ -24,6 +24,10 @@ def _measure_pack(imu):
     a = imu.lin_acc()
 
     ax, ay, az = a
+
+    # calculate acceleration and verify it is
+    # at least 0.20 - if not consider it noise
+    # and do not send it to the monitor 
     acc = math.sqrt(ax**2 + ay**2 + az**2)
 
     if acc > 0.20:

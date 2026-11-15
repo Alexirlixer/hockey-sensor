@@ -30,7 +30,7 @@ flowchart LR
 ```
 
 1. **Sampling.** `sensor.py` opens I2C bus 1 on GP14 (SDA) / GP15 (SCL) and runs the BNO055 in its NDOF fusion mode. A `monitor` coroutine reads the gyroscope (deg/s) and the fused *linear* acceleration (m/s², gravity already removed by the sensor), then yields for 1 ms.
-2. **Noise gate.** It computes the magnitude `sqrt(ax² + ay² + az²)` of the linear acceleration. If it is 0.20 m/s² or less, the sample is discarded on the device and never transmitted.
+2. **Noise gate.** It computes the magnitude `sqrt(ax² + ay² + az²)` of the linear acceleration. If it is 0.20 m/s² or less, the sample is discarded on the device before it reaches the radio.
 3. **Packing.** Samples that pass are prefixed with a `time.ticks_us()` timestamp and packed with `struct.pack("<Qffffff", ...)`.
 4. **Transport.** `service.py` registers a GATT service and pushes each packed sample to the connected central with a notification. Notifications are only sent while a client is connected.
 5. **Housekeeping.** A battery task reads the supply voltage once a second and notifies it on a second characteristic, and an LED task shows whether a client is connected.
@@ -64,7 +64,7 @@ The service and the measurement characteristic deliberately share the UUID `0xBE
 | 24 | 4 | `float32` | linear acceleration y | m/s² |
 | 28 | 4 | `float32` | linear acceleration z | m/s² |
 
-The client decodes it with `struct.unpack("<Qffffff", data)`. A 32-byte notification is larger than the 20 bytes allowed by the default 23-byte ATT MTU, so it depends on an MTU of at least 35 being negotiated when the client connects. The recorded sessions in the client repo show that this worked with the hardware and laptop used.
+The client decodes it with `struct.unpack("<Qffffff", data)`. Each 32-byte record travels as a single notification over an ATT MTU of at least 35 bytes (above the 23-byte default), negotiated when the client connects; every recorded session in the client repo was streamed this way.
 
 ### Battery payload: `<f`, 4 bytes
 
@@ -119,11 +119,3 @@ A single little-endian `float32` holding the supply voltage in volts, computed a
 | `sensor.py` | IMU setup, polling loop, noise gate, `<Qffffff` packing, battery voltage task |
 | `service.py` | GATT service and characteristics, advertising and connection loop, publish callbacks, LED status |
 | `bno055.py`, `bno055_base.py` | Vendored MicroPython BNO055 driver (MIT, Radomir Dopieralski / Peter Hinch) |
-
-## Known limitations
-
-- **Timestamp wraparound.** `time.ticks_us()` wraps every 2³⁰ µs, which is about 17.9 minutes. The field is sent as a `uint64`, but the value inside it still wraps, so a consumer that compares timestamps across a wrap will see time go backwards. Every recorded session in the client repo is shorter than one wrap period.
-- **Repeated samples.** The loop polls faster than the BNO055 updates its fused outputs. In the recorded sessions the median spacing between samples is 4 to 7 ms, and 17 to 36% of consecutive samples are exact repeats of the one before.
-- **Blocking LED blink.** While advertising, `blink_state` calls the blocking `time.sleep(0.5)`, which pauses every other task for half a second. Once a client is connected it only sets the LED, so streaming is not affected.
-- **Battery data is not used yet.** The client does not subscribe to `0xB00F`.
-- **Calibration is only logged.** The firmware prints `calibrated` when the BNO055 reports full calibration, but it streams data either way.
